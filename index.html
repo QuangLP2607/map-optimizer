@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+    <title>Map Optimizer</title>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+
+    <link rel="stylesheet" href="style.css" />
+  </head>
+
+  <body>
+    <div class="app">
+      <header class="header">
+        <div>
+          <h1>Map Optimizer</h1>
+          <p>Tìm vị trí tối ưu để kiểm soát nhiều mục tiêu nhất.</p>
+        </div>
+      </header>
+
+      <div class="layout">
+        <!-- SIDEBAR -->
+        <aside class="sidebar">
+          <section class="section">
+            <div class="section-header">
+              <h2>Bản đồ</h2>
+            </div>
+
+            <div class="map-size">
+              <label>
+                <span>Rộng</span>
+                <input
+                  id="mapWidth"
+                  type="number"
+                  min="10"
+                  max="5000"
+                  value="300"
+                />
+              </label>
+
+              <span class="multiply">×</span>
+
+              <label>
+                <span>Cao</span>
+                <input
+                  id="mapHeight"
+                  type="number"
+                  min="10"
+                  max="5000"
+                  value="300"
+                />
+              </label>
+            </div>
+          </section>
+
+          <section class="section forces-section">
+            <div class="section-header">
+              <div>
+                <h2>Thế lực</h2>
+                <span id="forceCount">0</span>
+              </div>
+
+              <button
+                id="addForceBtn"
+                class="icon-button"
+                type="button"
+                title="Thêm thế lực"
+              >
+                +
+              </button>
+            </div>
+
+            <div id="forces" class="forces"></div>
+          </section>
+
+          <button id="optimizeBtn" class="optimize-button" type="button">
+            Tìm vị trí tối ưu
+          </button>
+
+          <div id="status" class="status"></div>
+        </aside>
+
+        <!-- MAIN -->
+        <main class="main">
+          <div class="map-topbar">
+            <div>
+              <strong>Bản đồ chiến thuật</strong>
+              <span id="mapSizeBadge">300 × 300</span>
+            </div>
+          </div>
+
+          <div class="canvas-area">
+            <div class="canvas-wrapper">
+              <canvas id="mapCanvas" width="650" height="650"></canvas>
+            </div>
+          </div>
+
+          <div class="result">
+            <div class="result-item">
+              <span>Vị trí Ta</span>
+              <strong id="bestPosition" class="result-position"> — </strong>
+            </div>
+
+            <div class="result-item">
+              <span>Diện tích</span>
+              <strong id="bestArea">—</strong>
+            </div>
+
+            <div class="result-item">
+              <span>Tỷ lệ</span>
+              <strong id="bestPercent" class="result-percent"> — </strong>
+            </div>
+          </div>
+
+          <div id="legend" class="legend"></div>
+        </main>
+      </div>
+    </div>
+
+    <script src="script.js"></script>
+  </body>
+</html>
