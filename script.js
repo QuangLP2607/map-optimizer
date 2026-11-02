@@ -1,10 +1,13 @@
 const MIN_MAP_SIZE = 10;
 const MAX_MAP_SIZE = 5000;
+
 const DEFAULT_MAP_WIDTH = 300;
 const DEFAULT_MAP_HEIGHT = 300;
 
 const CANVAS_SIZE = 650;
 const EPSILON = 1e-9;
+
+const STORAGE_KEY = "map-optimizer-data";
 
 const COLORS = [
   "#3b82f6",
@@ -39,6 +42,10 @@ let enemies = [
 let nextEnemyId = 3;
 let bestPosition = null;
 
+/* =========================================================
+   DOM
+========================================================= */
+
 const mapWidthInput = document.getElementById("mapWidth");
 const mapHeightInput = document.getElementById("mapHeight");
 
@@ -57,7 +64,91 @@ const bestPercentElement = document.getElementById("bestPercent");
 
 const legendElement = document.getElementById("legend");
 const statusElement = document.getElementById("status");
+
 const mapSizeBadge = document.getElementById("mapSizeBadge");
+
+/* =========================================================
+   LOCAL STORAGE
+========================================================= */
+
+function saveData() {
+  const { width, height } = getMapSize();
+
+  const data = {
+    mapWidth: width,
+    mapHeight: height,
+
+    enemies: enemies.map((enemy) => ({
+      id: enemy.id,
+      name: enemy.name,
+      x: enemy.x,
+      y: enemy.y,
+    })),
+
+    nextEnemyId,
+  };
+
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+  } catch (error) {
+    console.error("Không thể lưu dữ liệu:", error);
+  }
+}
+
+function loadData() {
+  const savedData = localStorage.getItem(STORAGE_KEY);
+
+  if (!savedData) {
+    return;
+  }
+
+  try {
+    const data = JSON.parse(savedData);
+
+    const width = clamp(
+      Number(data.mapWidth) || DEFAULT_MAP_WIDTH,
+      MIN_MAP_SIZE,
+      MAX_MAP_SIZE,
+    );
+
+    const height = clamp(
+      Number(data.mapHeight) || DEFAULT_MAP_HEIGHT,
+      MIN_MAP_SIZE,
+      MAX_MAP_SIZE,
+    );
+
+    mapWidthInput.value = width;
+    mapHeightInput.value = height;
+
+    if (Array.isArray(data.enemies)) {
+      enemies = data.enemies.map((enemy, index) => ({
+        id: Number(enemy.id) || index + 1,
+
+        name:
+          typeof enemy.name === "string" && enemy.name.trim()
+            ? enemy.name
+            : `Địch ${index + 1}`,
+
+        x: clamp(Number(enemy.x) || 0, 0, width),
+
+        y: clamp(Number(enemy.y) || 0, 0, height),
+      }));
+    }
+
+    const maxEnemyId = enemies.reduce(
+      (maxId, enemy) => Math.max(maxId, enemy.id),
+      0,
+    );
+
+    nextEnemyId = Math.max(Number(data.nextEnemyId) || 0, maxEnemyId + 1);
+
+    bestPosition = null;
+  } catch (error) {
+    console.error("Không thể khôi phục dữ liệu:", error);
+
+    localStorage.removeItem(STORAGE_KEY);
+  }
+}
 
 /* =========================================================
    BASIC HELPERS
@@ -157,6 +248,7 @@ function clipPolygon(polygon, A, B, C) {
     const nextValue = A * next.x + B * next.y - C;
 
     const currentInside = currentValue <= EPSILON;
+
     const nextInside = nextValue <= EPSILON;
 
     if (currentInside && nextInside) {
@@ -166,11 +258,13 @@ function clipPolygon(polygon, A, B, C) {
 
     if (currentInside && !nextInside) {
       result.push(lineIntersection(current, next, A, B, C));
+
       continue;
     }
 
     if (!currentInside && nextInside) {
       result.push(lineIntersection(current, next, A, B, C));
+
       result.push(next);
     }
   }
@@ -429,6 +523,7 @@ function generateEnemyToBoundaryCandidates(mapWidth, mapHeight, enemiesList) {
 
       for (const distance of distances) {
         const x = enemy.x + ux * distance;
+
         const y = enemy.y + uy * distance;
 
         addCandidate(candidates, seen, x, y, mapWidth, mapHeight);
@@ -447,6 +542,7 @@ function refineCandidate(candidate, mapWidth, mapHeight, enemiesList, radius) {
   let best = {
     x: candidate.x,
     y: candidate.y,
+
     area: evaluatePosition(
       candidate.x,
       candidate.y,
@@ -571,6 +667,7 @@ function findBestPosition(mapWidth, mapHeight, enemiesList) {
   const evaluated = candidates
     .map((candidate) => ({
       ...candidate,
+
       area: evaluatePosition(
         candidate.x,
         candidate.y,
@@ -739,6 +836,8 @@ function bindForceInputs() {
 
       enemy.name = event.target.value || `Địch ${id}`;
 
+      saveData();
+
       renderLegend();
       drawCurrentMap();
     });
@@ -754,7 +853,11 @@ function bindForceInputs() {
         return;
       }
 
-      enemy.x = Number.parseInt(event.target.value, 10) || 0;
+      const { width } = getMapSize();
+
+      enemy.x = clamp(Number.parseInt(event.target.value, 10) || 0, 0, width);
+
+      saveData();
 
       drawCurrentMap();
     });
@@ -770,7 +873,11 @@ function bindForceInputs() {
         return;
       }
 
-      enemy.y = Number.parseInt(event.target.value, 10) || 0;
+      const { height } = getMapSize();
+
+      enemy.y = clamp(Number.parseInt(event.target.value, 10) || 0, 0, height);
+
+      saveData();
 
       drawCurrentMap();
     });
@@ -781,6 +888,16 @@ function bindForceInputs() {
       const id = Number(button.dataset.removeId);
 
       enemies = enemies.filter((enemy) => enemy.id !== id);
+
+      bestPosition = null;
+
+      bestPositionElement.textContent = "—";
+
+      bestAreaElement.textContent = "—";
+
+      bestPercentElement.textContent = "—";
+
+      saveData();
 
       renderForces();
       drawCurrentMap();
@@ -897,8 +1014,11 @@ function drawGrid(mapWidth, mapHeight) {
     const canvasX = x * scaleX;
 
     ctx.beginPath();
+
     ctx.moveTo(canvasX, 0);
+
     ctx.lineTo(canvasX, CANVAS_SIZE);
+
     ctx.stroke();
   }
 
@@ -906,8 +1026,11 @@ function drawGrid(mapWidth, mapHeight) {
     const canvasY = y * scaleY;
 
     ctx.beginPath();
+
     ctx.moveTo(0, canvasY);
+
     ctx.lineTo(CANVAS_SIZE, canvasY);
+
     ctx.stroke();
   }
 
@@ -934,13 +1057,17 @@ function drawPolygon(polygon, mapWidth, mapHeight, color) {
   ctx.closePath();
 
   ctx.fillStyle = color;
+
   ctx.globalAlpha = 0.18;
+
   ctx.fill();
 
   ctx.globalAlpha = 1;
 
   ctx.strokeStyle = color;
+
   ctx.lineWidth = 1.4;
+
   ctx.stroke();
 }
 
@@ -949,9 +1076,8 @@ function drawPoint(x, y, mapWidth, mapHeight, color, label, isTa = false) {
 
   ctx.save();
 
-  /*
-    Shadow
-  */
+  /* Shadow */
+
   ctx.beginPath();
 
   ctx.arc(point.x, point.y + 2, isTa ? 9 : 7, 0, Math.PI * 2);
@@ -960,28 +1086,29 @@ function drawPoint(x, y, mapWidth, mapHeight, color, label, isTa = false) {
 
   ctx.fill();
 
-  /*
-    Outer ring
-  */
+  /* Outer ring */
+
   ctx.beginPath();
 
   ctx.arc(point.x, point.y, isTa ? 9 : 7, 0, Math.PI * 2);
 
   ctx.fillStyle = "#fff";
+
   ctx.fill();
 
-  /*
-    Main dot
-  */
+  /* Main dot */
+
   ctx.beginPath();
 
   ctx.arc(point.x, point.y, isTa ? 6 : 5, 0, Math.PI * 2);
 
   ctx.fillStyle = color;
+
   ctx.fill();
 
   if (isTa) {
     ctx.strokeStyle = "#111827";
+
     ctx.lineWidth = 2;
 
     ctx.beginPath();
@@ -991,9 +1118,8 @@ function drawPoint(x, y, mapWidth, mapHeight, color, label, isTa = false) {
     ctx.stroke();
   }
 
-  /*
-    Label
-  */
+  /* Label */
+
   if (label) {
     const text = label;
 
@@ -1002,6 +1128,7 @@ function drawPoint(x, y, mapWidth, mapHeight, color, label, isTa = false) {
     const textWidth = ctx.measureText(text).width;
 
     const boxWidth = textWidth + 14;
+
     const boxHeight = 23;
 
     const boxX = point.x - boxWidth / 2;
@@ -1022,6 +1149,7 @@ function drawPoint(x, y, mapWidth, mapHeight, color, label, isTa = false) {
     ctx.fillStyle = "#0f172a";
 
     ctx.textAlign = "center";
+
     ctx.textBaseline = "middle";
 
     ctx.fillText(text, point.x, boxY + boxHeight / 2);
@@ -1067,6 +1195,7 @@ function drawCoordinates(mapWidth, mapHeight) {
   ctx.fillStyle = "rgba(71,85,105,0.75)";
 
   ctx.textAlign = "left";
+
   ctx.textBaseline = "top";
 
   ctx.fillText("0, 0", 6, 6);
@@ -1163,8 +1292,11 @@ function drawCurrentMap() {
 function renderResult(result, mapWidth, mapHeight) {
   if (!result || !result.best) {
     bestPositionElement.textContent = "Không tìm thấy";
+
     bestAreaElement.textContent = "—";
+
     bestPercentElement.textContent = "—";
+
     return;
   }
 
@@ -1176,7 +1308,9 @@ function renderResult(result, mapWidth, mapHeight) {
 
   bestPositionElement.textContent = `(${best.x}, ${best.y})`;
 
-  bestAreaElement.textContent = `${roundNumber(best.area).toLocaleString("vi-VN")}`;
+  bestAreaElement.textContent = `${roundNumber(best.area).toLocaleString(
+    "vi-VN",
+  )}`;
 
   bestPercentElement.textContent = `${roundNumber(percentage)}%`;
 
@@ -1194,10 +1328,23 @@ addForceBtn.addEventListener("click", () => {
 
   enemies.push({
     id: nextEnemyId++,
+
     name: `Địch ${nextEnemyId - 1}`,
+
     x: Math.round(width / 2),
+
     y: Math.round(height / 2),
   });
+
+  bestPosition = null;
+
+  bestPositionElement.textContent = "—";
+
+  bestAreaElement.textContent = "—";
+
+  bestPercentElement.textContent = "—";
+
+  saveData();
 
   renderForces();
   drawCurrentMap();
@@ -1211,6 +1358,16 @@ mapWidthInput.addEventListener("change", () => {
   enemies.forEach((enemy) => {
     enemy.x = clamp(enemy.x, 0, width);
   });
+
+  bestPosition = null;
+
+  bestPositionElement.textContent = "—";
+
+  bestAreaElement.textContent = "—";
+
+  bestPercentElement.textContent = "—";
+
+  saveData();
 
   mapSizeBadge.textContent = `${width} × ${height}`;
 
@@ -1226,6 +1383,16 @@ mapHeightInput.addEventListener("change", () => {
     enemy.y = clamp(enemy.y, 0, height);
   });
 
+  bestPosition = null;
+
+  bestPositionElement.textContent = "—";
+
+  bestAreaElement.textContent = "—";
+
+  bestPercentElement.textContent = "—";
+
+  saveData();
+
   mapSizeBadge.textContent = `${width} × ${height}`;
 
   drawCurrentMap();
@@ -1236,27 +1403,33 @@ optimizeBtn.addEventListener("click", () => {
 
   if (enemies.length === 0) {
     alert("Cần ít nhất 1 thế lực địch.");
+
     return;
   }
 
   /*
       Clamp enemy coordinates
     */
+
   enemies.forEach((enemy) => {
     enemy.x = clamp(Number(enemy.x) || 0, 0, width);
 
     enemy.y = clamp(Number(enemy.y) || 0, 0, height);
   });
 
+  saveData();
+
   optimizeBtn.disabled = true;
+
   optimizeBtn.textContent = "Đang tìm vị trí...";
 
   statusElement.textContent = "Đang tính toán vùng kiểm soát...";
 
   /*
-      Cho browser render trạng thái loading
-      trước khi chạy thuật toán.
+      Cho browser render trạng thái
+      loading trước khi chạy thuật toán.
     */
+
   requestAnimationFrame(() => {
     setTimeout(() => {
       const result = findBestPosition(width, height, enemies);
@@ -1266,9 +1439,11 @@ optimizeBtn.addEventListener("click", () => {
       renderResult(result, width, height);
 
       renderLegend();
+
       drawCurrentMap();
 
       optimizeBtn.disabled = false;
+
       optimizeBtn.textContent = "Tìm vị trí tối ưu";
     }, 20);
   });
@@ -1277,6 +1452,14 @@ optimizeBtn.addEventListener("click", () => {
 /* =========================================================
    INITIALIZE
 ========================================================= */
+
+/*
+  Load dữ liệu đã lưu trước.
+  Nếu chưa có dữ liệu thì giữ nguyên
+  dữ liệu mặc định ở phía trên.
+*/
+
+loadData();
 
 renderForces();
 renderLegend();
