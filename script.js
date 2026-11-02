@@ -96,7 +96,14 @@ function saveData() {
 }
 
 function loadData() {
-  const savedData = localStorage.getItem(STORAGE_KEY);
+  let savedData;
+
+  try {
+    savedData = localStorage.getItem(STORAGE_KEY);
+  } catch (error) {
+    console.error("Không thể đọc dữ liệu:", error);
+    return;
+  }
 
   if (!savedData) {
     return;
@@ -146,7 +153,11 @@ function loadData() {
   } catch (error) {
     console.error("Không thể khôi phục dữ liệu:", error);
 
-    localStorage.removeItem(STORAGE_KEY);
+    try {
+      localStorage.removeItem(STORAGE_KEY);
+    } catch {
+      // Ignore storage errors.
+    }
   }
 }
 
@@ -823,6 +834,18 @@ function renderForces() {
   renderLegend();
 }
 
+function clearResult() {
+  bestPosition = null;
+
+  bestPositionElement.textContent = "—";
+  bestAreaElement.textContent = "—";
+  bestPercentElement.textContent = "—";
+
+  statusElement.textContent = "";
+
+  renderLegend();
+}
+
 function bindForceInputs() {
   document.querySelectorAll(".force-name").forEach((input) => {
     input.addEventListener("input", (event) => {
@@ -836,6 +859,7 @@ function bindForceInputs() {
 
       enemy.name = event.target.value || `Địch ${id}`;
 
+      clearResult();
       saveData();
 
       renderLegend();
@@ -857,6 +881,7 @@ function bindForceInputs() {
 
       enemy.x = clamp(Number.parseInt(event.target.value, 10) || 0, 0, width);
 
+      clearResult();
       saveData();
 
       drawCurrentMap();
@@ -877,6 +902,7 @@ function bindForceInputs() {
 
       enemy.y = clamp(Number.parseInt(event.target.value, 10) || 0, 0, height);
 
+      clearResult();
       saveData();
 
       drawCurrentMap();
@@ -889,14 +915,7 @@ function bindForceInputs() {
 
       enemies = enemies.filter((enemy) => enemy.id !== id);
 
-      bestPosition = null;
-
-      bestPositionElement.textContent = "—";
-
-      bestAreaElement.textContent = "—";
-
-      bestPercentElement.textContent = "—";
-
+      clearResult();
       saveData();
 
       renderForces();
@@ -966,12 +985,30 @@ function getCanvasScale(mapWidth, mapHeight) {
   };
 }
 
+/*
+  Hệ tọa độ của Map Optimizer:
+
+        Y
+        ↑
+        |
+        |
+        |
+        +────────────→ X
+       (0,0)
+
+  Canvas lại có Y tăng từ trên xuống.
+
+  Vì vậy:
+      canvasY = (mapHeight - y) * scaleY
+*/
+
 function mapToCanvas(x, y, mapWidth, mapHeight) {
   const { scaleX, scaleY } = getCanvasScale(mapWidth, mapHeight);
 
   return {
     x: x * scaleX,
-    y: y * scaleY,
+
+    y: (mapHeight - y) * scaleY,
   };
 }
 
@@ -1010,6 +1047,8 @@ function drawGrid(mapWidth, mapHeight) {
 
   ctx.lineWidth = 1;
 
+  /* Vertical grid lines */
+
   for (let x = 0; x <= mapWidth; x += gridStep) {
     const canvasX = x * scaleX;
 
@@ -1022,8 +1061,16 @@ function drawGrid(mapWidth, mapHeight) {
     ctx.stroke();
   }
 
+  /* Horizontal grid lines */
+
   for (let y = 0; y <= mapHeight; y += gridStep) {
-    const canvasY = y * scaleY;
+    /*
+      Quan trọng:
+
+      y của bản đồ tăng từ dưới lên,
+      nên phải đảo Y khi vẽ Canvas.
+    */
+    const canvasY = (mapHeight - y) * scaleY;
 
     ctx.beginPath();
 
@@ -1131,9 +1178,19 @@ function drawPoint(x, y, mapWidth, mapHeight, color, label, isTa = false) {
 
     const boxHeight = 23;
 
-    const boxX = point.x - boxWidth / 2;
+    /*
+      Nếu point nằm sát phía trên,
+      label sẽ được đẩy xuống.
+    */
+    let boxX = point.x - boxWidth / 2;
 
-    const boxY = point.y - 34;
+    let boxY = point.y - 34;
+
+    if (boxY < 4) {
+      boxY = point.y + 12;
+    }
+
+    boxX = clamp(boxX, 4, CANVAS_SIZE - boxWidth - 4);
 
     ctx.fillStyle = "rgba(255,255,255,0.94)";
 
@@ -1144,6 +1201,7 @@ function drawPoint(x, y, mapWidth, mapHeight, color, label, isTa = false) {
     roundRect(ctx, boxX, boxY, boxWidth, boxHeight, 7);
 
     ctx.fill();
+
     ctx.stroke();
 
     ctx.fillStyle = "#0f172a";
@@ -1152,7 +1210,7 @@ function drawPoint(x, y, mapWidth, mapHeight, color, label, isTa = false) {
 
     ctx.textBaseline = "middle";
 
-    ctx.fillText(text, point.x, boxY + boxHeight / 2);
+    ctx.fillText(text, boxX + boxWidth / 2, boxY + boxHeight / 2);
   }
 
   ctx.restore();
@@ -1187,6 +1245,10 @@ function roundRect(context, x, y, width, height, radius) {
   context.closePath();
 }
 
+/* =========================================================
+   COORDINATES
+========================================================= */
+
 function drawCoordinates(mapWidth, mapHeight) {
   ctx.save();
 
@@ -1194,26 +1256,48 @@ function drawCoordinates(mapWidth, mapHeight) {
 
   ctx.fillStyle = "rgba(71,85,105,0.75)";
 
+  /*
+    GÓC DƯỚI TRÁI
+    = (0, 0)
+  */
   ctx.textAlign = "left";
-
-  ctx.textBaseline = "top";
-
-  ctx.fillText("0, 0", 6, 6);
-
-  ctx.textAlign = "right";
-
-  ctx.fillText(`${mapWidth}, 0`, CANVAS_SIZE - 6, 6);
-
   ctx.textBaseline = "bottom";
 
-  ctx.fillText(`0, ${mapHeight}`, 6, CANVAS_SIZE - 6);
+  ctx.fillText("0, 0", 6, CANVAS_SIZE - 6);
 
+  /*
+    GÓC DƯỚI PHẢI
+    = (mapWidth, 0)
+  */
   ctx.textAlign = "right";
+  ctx.textBaseline = "bottom";
 
-  ctx.fillText(`${mapWidth}, ${mapHeight}`, CANVAS_SIZE - 6, CANVAS_SIZE - 6);
+  ctx.fillText(`${mapWidth}, 0`, CANVAS_SIZE - 6, CANVAS_SIZE - 6);
+
+  /*
+    GÓC TRÊN TRÁI
+    = (0, mapHeight)
+  */
+  ctx.textAlign = "left";
+  ctx.textBaseline = "top";
+
+  ctx.fillText(`0, ${mapHeight}`, 6, 6);
+
+  /*
+    GÓC TRÊN PHẢI
+    = (mapWidth, mapHeight)
+  */
+  ctx.textAlign = "right";
+  ctx.textBaseline = "top";
+
+  ctx.fillText(`${mapWidth}, ${mapHeight}`, CANVAS_SIZE - 6, 6);
 
   ctx.restore();
 }
+
+/* =========================================================
+   MAP BORDER
+========================================================= */
 
 function drawMapBorder() {
   ctx.save();
@@ -1226,6 +1310,10 @@ function drawMapBorder() {
 
   ctx.restore();
 }
+
+/* =========================================================
+   VORONOI RENDER
+========================================================= */
 
 function drawAllVoronoiCells(mapWidth, mapHeight) {
   if (bestPosition) {
@@ -1326,23 +1414,16 @@ function renderResult(result, mapWidth, mapHeight) {
 addForceBtn.addEventListener("click", () => {
   const { width, height } = getMapSize();
 
+  const id = nextEnemyId++;
+
   enemies.push({
-    id: nextEnemyId++,
-
-    name: `Địch ${nextEnemyId - 1}`,
-
+    id,
+    name: `Địch ${id}`,
     x: Math.round(width / 2),
-
     y: Math.round(height / 2),
   });
 
-  bestPosition = null;
-
-  bestPositionElement.textContent = "—";
-
-  bestAreaElement.textContent = "—";
-
-  bestPercentElement.textContent = "—";
+  clearResult();
 
   saveData();
 
@@ -1359,13 +1440,7 @@ mapWidthInput.addEventListener("change", () => {
     enemy.x = clamp(enemy.x, 0, width);
   });
 
-  bestPosition = null;
-
-  bestPositionElement.textContent = "—";
-
-  bestAreaElement.textContent = "—";
-
-  bestPercentElement.textContent = "—";
+  clearResult();
 
   saveData();
 
@@ -1383,13 +1458,7 @@ mapHeightInput.addEventListener("change", () => {
     enemy.y = clamp(enemy.y, 0, height);
   });
 
-  bestPosition = null;
-
-  bestPositionElement.textContent = "—";
-
-  bestAreaElement.textContent = "—";
-
-  bestPercentElement.textContent = "—";
+  clearResult();
 
   saveData();
 
@@ -1453,14 +1522,10 @@ optimizeBtn.addEventListener("click", () => {
    INITIALIZE
 ========================================================= */
 
-/*
-  Load dữ liệu đã lưu trước.
-  Nếu chưa có dữ liệu thì giữ nguyên
-  dữ liệu mặc định ở phía trên.
-*/
-
 loadData();
 
 renderForces();
+
 renderLegend();
+
 drawCurrentMap();
